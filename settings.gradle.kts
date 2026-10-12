@@ -44,3 +44,12 @@ rootProject.name = "eudi-lib-android-wallet-core"
 include(":wallet-core")
 include(":document-manager")
 include(":transfer-manager")
+
+// eudi-lib-jvm-openid4vci-kt with credential_metadata custom parameters, checked out next to this
+// repository from https://github.com/marinaioannou/eudi-lib-jvm-openid4vci-kt
+// (branch edp/credential-metadata-passthrough).
+includeBuild("../eudi-lib-jvm-openid4vci-kt") {
+    dependencySubstitution {
+        substitute(module("eu.europa.ec.eudi:eudi-lib-jvm-openid4vci-kt")).using(project(":"))
+    }
+}
