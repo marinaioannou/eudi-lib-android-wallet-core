@@ -17,6 +17,8 @@ import eu.europa.ec.eudi.wallet.document.metadata.IssuerMetadata
 import eu.europa.ec.eudi.wallet.issue.openid4vci.Offer
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Before
 import org.junit.Test
 import java.net.URI
@@ -241,5 +243,39 @@ class IssuerMetadataTransformationsTest {
 
         // Then
         assertEquals(expectedMetaData, actualMetaData)
+    }
+
+    @Test
+    fun `extractIssuerMetaData keeps the embedded disclosure policy`() {
+        // Given
+        val policy = buildJsonObject {
+            put("id", "https://issuer.example.com/edp/v1")
+            put("type", "no_policy")
+        }
+        val credential = SdJwtVcCredential(
+            scope = "exampleScope",
+            cryptographicBindingMethodsSupported = listOf(),
+            credentialSigningAlgorithmsSupported = listOf(JwsAlgorithm("RS256")),
+            proofTypesSupported = ProofTypesSupported.Companion.Empty,
+            type = "exampleType",
+            credentialMetadata = CredentialMetadata(
+                display = emptyList(),
+                customParameters = buildJsonObject {
+                    put("embedded_disclosure_policy", policy)
+                    put("other_parameter", "value")
+                },
+            )
+        )
+        val offeredDocument = Offer.OfferedDocument(
+            offer = dummyOffer,
+            configurationIdentifier = CredentialConfigurationIdentifier(dummyDocumentId),
+            configuration = credential,
+        )
+
+        // When
+        val actualMetaData = offeredDocument.extractIssuerMetadata()
+
+        // Then
+        assertEquals(policy, actualMetaData.embeddedDisclosurePolicy)
     }
 }

@@ -33,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -48,6 +49,7 @@ class DocumentCreatorTest {
             every { credentialMetadata } returns mockk {
                 every { claims } returns emptyList()
                 every { display } returns emptyList()
+                every { customParameters } returns JsonObject(emptyMap())
             }
         }
         val configurationIdentifiers = listOf(

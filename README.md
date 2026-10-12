@@ -116,6 +116,7 @@ The library supports the following features:
 |                            | ClientID scheme                                                         | ✅ preregistered   <br /> ✅ x509_san_dns<br /> ✅ x509_hash <br /> ✅ redirect_uri                                                                               |
 |                            | DCQL                                                                    | ✅ support for credential_sets  <br />✅ support for claim_sets <br />✅ per-query `multiple` flag <br />✅ per-query `require_cryptographic_holder_binding` flag |
 |                            | Transaction data                                                        | ✅ SD-JWT VC <br />✅ ISO/IEC 18013-5 mdoc                                                                                                               |
+| **Disclosure Policies**    | Embedded disclosure policies (ETSI TS 119 472-3)                        | ✅ No policy <br /> ✅ Authorised relying parties                                                                                                           |
 | **Trust Mark**             | EUDI Wallet Trust Mark (EC TS01 v1.2)                                   | ✅ Static (pre-distribution) <br /> ✅ Dynamic (on-demand via provider)                                                  |
 |                            | Trust Mark resource fetching                                            | ✅                                                                                                                      |
 
@@ -2556,6 +2557,110 @@ val transferEventListener = TransferEvent.Listener { event ->
 Note: Empty matches in `presentmentData.credentialSets` mean the request cannot be satisfied
 with the credentials currently in the wallet — render an appropriate error state and do 
 not call `generateResponse`.
+
+#### Embedded Disclosure Policies (ETSI TS 119 472-3)
+
+An attestation provider can set an embedded disclosure policy for a document: the conditions that
+a relying party has to meet to receive the document (ETSI TS 119 472-3, clause 4.2.5). The
+library stores the policy with the document during issuance. During presentation, the application
+evaluates the policy, informs the user of the result, and lets the user decide.
+
+##### How it works
+
+1. **Issuance**: the library reads the policy from the issuer metadata and stores it with the
+   document, in `IssuerMetadata.embeddedDisclosurePolicy`. No action is required from the
+   application.
+2. **Presentation**: before the user approves the presentation, the application calls
+   `evaluateDisclosurePolicy` for each document it is about to present, with the
+   `ProcessedRequest.Success` of the request (Commission Implementing Regulation (EU) 2024/2982,
+   Article 3(9)).
+3. **Consent**: the application shows the result to the user. The result does not block the
+   presentation; the user decides whether to share the document.
+
+The evaluation works in the same way for proximity, OpenID4VP and Digital Credentials API requests.
+
+##### Evaluating the policy
+
+```kotlin
+is TransferEvent.RequestReceived -> {
+    val success = event.processedRequest.getOrThrow()
+        as RequestProcessor.ProcessedRequest.Success
+    val selection = success.presentmentSelections[userSelectedIndex]
+
+    // One result per document that the selection would present.
+    val policyResults: Map<String, DisclosurePolicyResult?> = selection.matches
+        .map { it.credential.document.identifier }
+        .distinct()
+        .associateWith { documentId ->
+            wallet.getDocumentById(documentId)?.evaluateDisclosurePolicy(success)
+        }
+
+    // Show the results in the consent UI, then generate the response as usual.
+}
+```
+
+##### Results
+
+| Result                           | Meaning                                                            | What to show                                                                                                                       |
+|----------------------------------|--------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| `NoPolicy`                       | The document has no policy, or its policy sets no restriction      | Nothing                                                                                                                            |
+| `Satisfied`                      | The relying party meets the policy                                 | Nothing                                                                                                                            |
+| `NotSatisfied(policy)`           | The relying party does not meet the policy                         | A warning, e.g. "The issuer of your *document* does not want you to share it with *relying party*", and `policy.laymanUri` as a link |
+| `CannotEvaluate(reason, policy)` | The policy could not be evaluated                                  | A notice that the issuer's policy could not be checked, and `policy?.laymanUri` as a link                                          |
+
+The `reason` of `CannotEvaluate` is one of:
+
+| Reason                                  | Meaning                                                                                              |
+|-----------------------------------------|------------------------------------------------------------------------------------------------------|
+| `MALFORMED_POLICY`                      | The stored policy does not follow the format described below                                         |
+| `UNSUPPORTED_POLICY_TYPE`               | The policy type is not supported                                                                     |
+| `RELYING_PARTY_NOT_IDENTIFIED`          | The request does not have a single requester identity with a trusted access certificate that carries an identifier |
+| `REGISTRATION_CERTIFICATE_NOT_VERIFIED` | The policy lists entitlements and the request has no verified registration certificate               |
+
+##### How a relying party is matched
+
+The policy is satisfied when one of its entries matches the relying party:
+
+- A `subject_dn` entry matches when its organization identifier (`ORGID`), or for a natural person
+  its serial number (`SN`), is the same as in the relying party's access certificate. The access
+  certificate is used when the request has a single requester identity and its certificate chain
+  is trusted (`trustMetadata` is not `null`).
+- An `entitlement` entry matches when the relying party's verified registration certificate holds
+  the entitlement. This requires registration certificate validation, see
+  [REGISTRATION_CERTIFICATE.md](REGISTRATION_CERTIFICATE.md#enabling-and-disabling).
+
+##### Policy format
+
+ETSI TS 119 472-3 clause 4.2.5 defines the data model of the policy. The library reads the policy
+from the `embedded_disclosure_policy` member of `credential_metadata`, in each credential
+configuration of the issuer metadata:
+
+```json
+"credential_metadata": {
+  "display": [ ... ],
+  "embedded_disclosure_policy": {
+    "id": "https://issuer.example.com/edp/v1",
+    "type": "authorised_relying_parties",
+    "authorised_relying_parties": [
+      { "subject_dn": "CN=Example Shop, O=Example Shop SA, ORGID=LEIXG-529900T8BM49AURSDO55, C=GR" },
+      { "entitlement": "https://uri.etsi.org/19475/Entitlement/Service_Provider" }
+    ],
+    "layman_uri": "https://issuer.example.com/edp/v1/explained"
+  }
+}
+```
+
+| Member                       | Description                                                                                                                       |
+|------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `id`                         | Required. The URI that identifies the policy                                                                                      |
+| `type`                       | Required. `no_policy` or `authorised_relying_parties`                                                                             |
+| `authorised_relying_parties` | Required for `authorised_relying_parties`. Each entry has either a `subject_dn` (RFC 4514 string with `ORGID` or `SN`) or an `entitlement` (URI) |
+| `layman_uri`                 | Optional. A page that explains the policy to the user                                                                             |
+
+Other members are ignored.
+
+In a `subject_dn`, `ORGID` is the organizationIdentifier, `SN` the serialNumber and `GN` the
+givenName; the surname is written as `surname`. Each `subject_dn` has exactly one identifier.
 
 #### Rejecting a Presentation
 To reject a remote presentation request and notify the Verifier that the user has declined, call the `wallet.rejectRemotePresentation()` method

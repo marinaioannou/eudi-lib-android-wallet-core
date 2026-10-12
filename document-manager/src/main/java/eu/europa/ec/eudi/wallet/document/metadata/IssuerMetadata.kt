@@ -27,6 +27,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import java.net.URI
 import java.util.Locale
 
@@ -37,6 +38,8 @@ import java.util.Locale
  * @property claims metadata for the claims of the document
  * @property credentialIssuerIdentifier the credential issuer identifier
  * @property issuerDisplay the display properties of the issuer that issued the document
+ * @property embeddedDisclosurePolicy the embedded disclosure policy of the document, as received
+ * in the issuer metadata
  */
 @Serializable
 data class IssuerMetadata(
@@ -44,7 +47,8 @@ data class IssuerMetadata(
     val display: List<Display>,
     val claims: List<Claim>?,
     val credentialIssuerIdentifier: String,
-    val issuerDisplay: List<IssuerDisplay>?
+    val issuerDisplay: List<IssuerDisplay>?,
+    val embeddedDisclosurePolicy: JsonElement? = null
 ) {
 
     /**

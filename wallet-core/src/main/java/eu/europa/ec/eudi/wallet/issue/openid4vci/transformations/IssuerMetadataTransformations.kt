@@ -20,8 +20,10 @@ import eu.europa.ec.eudi.openid4vci.Claim
 import eu.europa.ec.eudi.openid4vci.ClaimPath
 import eu.europa.ec.eudi.openid4vci.ClaimPathElement
 import eu.europa.ec.eudi.openid4vci.Display
+import eu.europa.ec.eudi.wallet.disclosurepolicy.EmbeddedDisclosurePolicy
 import eu.europa.ec.eudi.wallet.document.metadata.IssuerMetadata
 import eu.europa.ec.eudi.wallet.issue.openid4vci.Offer.OfferedDocument
+import kotlinx.serialization.json.JsonNull
 
 fun OfferedDocument.extractIssuerMetadata(): IssuerMetadata {
 
@@ -44,7 +46,10 @@ fun OfferedDocument.extractIssuerMetadata(): IssuerMetadata {
                 locale = it.locale,
                 logo = it.logo?.toDocumentLogo()
             )
-        }
+        },
+        embeddedDisclosurePolicy = configuration.credentialMetadata?.customParameters
+            ?.get(EmbeddedDisclosurePolicy.CREDENTIAL_METADATA_PARAMETER)
+            ?.takeUnless { it is JsonNull }
     )
 }
 
